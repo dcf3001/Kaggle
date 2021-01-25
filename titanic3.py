@@ -5,6 +5,14 @@ Created on Tue Oct 13 21:25:36 2020
 @author: David
 """
 # %% Import libraries
+from sklearn.metrics import classification_report, confusion_matrix
+from tensorflow.keras.layers import Dense, Activation, Dropout
+from tensorflow.keras.constraints import max_norm
+from tensorflow.keras.models import Sequential
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LinearRegression
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,6 +32,8 @@ both = both.join(pd.get_dummies(both['Embarked'], 'from'))
 both = both.drop('Embarked', axis=1)
 
 # %% TITLES: Get dummies for titles in names (Mr, Mrs, Miss...)
+
+
 def title(name):
     if 'Mr.' in name:
         return 'Mr'
@@ -35,17 +45,21 @@ def title(name):
         return 'Master'
     else:
         return 'Other'
-    
+
+
 both['title'] = both['Name'].apply(title)
 both = both.join(pd.get_dummies(both['title'], 'Title'))
 both = both.drop('title', axis=1)
 
 # %% CABIN: Split cabin number (e.g. C123) into parts and get dummies
+
+
 def cabin_split(cabin):
     if type(cabin) is str:
         return [cabin[0], cabin[1:]]
     else:
-        return [0, 0] 
+        return [0, 0]
+
 
 both['CabinPrefix'] = both['Cabin'].apply(cabin_split).apply(lambda x: x[0])
 both['CabinNumber'] = both['Cabin'].apply(cabin_split).apply(lambda x: x[1])
@@ -74,14 +88,17 @@ both = both.drop('LastNameFare', axis=1)
 # %% IMPUTE FARE: for the guy without fare data, impute from Pclass
 both[pd.isna(both['Fare'])]
 both.groupby('Pclass').mean()['Fare']
+
+
 def impute_fare(pclass, fare):
     if pd.isna(fare):
         return both.groupby('Pclass').mean()['Fare'][pclass]
     else:
         return fare
-    
+
+
 both['ImputedFare'] = both.apply(lambda x: impute_fare(x['Pclass'],
-                                                        x['Fare']), axis=1)
+                                                       x['Fare']), axis=1)
 both['Fare'] = both['ImputedFare']
 both = both.drop('ImputedFare', axis=1)
 
@@ -90,19 +107,19 @@ both['Cheap'] = both['Fare'].apply(lambda x: x < 24)
 
 # %% IMPUTE AGE: we impute 263 missing ages by regression from the training set
 train = both[pd.notna(both['Survived'])]
-train.corr()['Age'].sort_values() # examine correlations
+train.corr()['Age'].sort_values()  # examine correlations
 
 # Use StatsModels to get p-values and pick regressors
-age_regressors = ['Title_Master', 'Title_Mr', 'Title_Miss', 'Title_Mrs', 
+age_regressors = ['Title_Master', 'Title_Mr', 'Title_Miss', 'Title_Mrs',
                   'Title_Other', 'Pclass', 'SibSp', 'Female', 'Age']
-X = train[age_regressors].dropna().drop('Age', axis=1) 
+X = train[age_regressors].dropna().drop('Age', axis=1)
 y = train['Age'].dropna()
-X2 = sm.add_constant(X) # required for regression
+X2 = sm.add_constant(X)  # required for regression
 reg_age = sm.OLS(y, X2.astype(float))
-print(reg_age.fit().summary()) # prints coefficients and p-values; R^2 is 0.41 #
+# prints coefficients and p-values; R^2 is 0.41 #
+print(reg_age.fit().summary())
 
 # Use SciKitLearn to predict ages based on those regressors
-from sklearn.linear_model import LinearRegression
 sk_reg_age = LinearRegression()
 sk_reg_age.fit(X, y)
 both_X = both[age_regressors].drop('Age', axis=1)
@@ -110,12 +127,17 @@ age_predictions = sk_reg_age.predict(both_X)
 both['ImputedAge'] = age_predictions
 
 # Pick the imputed age if we don't have the age already
+
+
 def impute_age(age, imputed_age):
     if pd.isna(age):
         return max(imputed_age, 0)
     else:
-        return age   
-both['Age'] = both.apply(lambda x: impute_age(x['Age'], x['ImputedAge']), axis=1)
+        return age
+
+
+both['Age'] = both.apply(lambda x: impute_age(
+    x['Age'], x['ImputedAge']), axis=1)
 both = both.drop('ImputedAge', axis=1)
 
 # Call anyone under 16 a child
@@ -127,7 +149,6 @@ train = both[pd.notna(both['Survived'])]
 test = both[pd.isna(both['Survived'])].drop('Survived', axis=1)
 
 # %% SCALING
-from sklearn.preprocessing import MinMaxScaler
 X_train = train.drop('Survived', axis=1)
 y_train = train['Survived']
 scaler = MinMaxScaler()
@@ -137,15 +158,10 @@ X_test = pd.DataFrame(scaler.fit_transform(test), index=test.index,
                       columns=test.columns)
 
 # %% TRAIN-TEST SPLIT
-from sklearn.model_selection import train_test_split
-X_train_train, X_train_test, y_train_train, y_train_test = train_test_split(X_train, y_train, test_size=0.3)
+X_train_train, X_train_test, y_train_train, y_train_test = train_test_split(
+    X_train, y_train, test_size=0.3)
 
 # %% NEURAL NETWORK (SCORE: 0.77751)
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Activation,Dropout
-from tensorflow.keras.constraints import max_norm
-from sklearn.metrics import classification_report,confusion_matrix
 
 model = Sequential()
 
@@ -162,25 +178,25 @@ model.add(Dense(6, activation='relu'))
 model.add(Dropout(0.4))
 
 # output layer
-model.add(Dense(units=1,activation='sigmoid'))
+model.add(Dense(units=1, activation='sigmoid'))
 
 # Compile model
 model.compile(loss='binary_crossentropy', optimizer='adam')
 
-model.fit(x=np.array(X_train_train), 
-          y=np.array(y_train_train), 
+model.fit(x=np.array(X_train_train),
+          y=np.array(y_train_train),
           epochs=200,
           batch_size=128,
-          validation_data=(X_train_test, y_train_test), 
+          validation_data=(X_train_test, y_train_test),
           )
 
 losses = pd.DataFrame(model.history.history)
-losses[['loss','val_loss']].plot()
+losses[['loss', 'val_loss']].plot()
 
 predictions = model.predict_classes(X_train_test)
-print(classification_report(y_train_test,predictions))
+print(classification_report(y_train_test, predictions))
 
 predictions_out = model.predict_classes(X_test)
-pd.DataFrame(predictions_out, 
+pd.DataFrame(predictions_out,
              columns=['Survived'],
              index=X_test.index).to_csv('neural network2.csv')
